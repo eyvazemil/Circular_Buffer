@@ -1,4 +1,4 @@
-CC = gcc -fsanitize=address -g -O3 -Werror -lpthread
+CC = gcc -fsanitize=address -O0 -Werror -lpthread
 BUILD_DIR = Build
 SRC_DIR = src
 OUT_FILE = $(BUILD_DIR)/circular_buffer.out

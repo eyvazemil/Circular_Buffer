@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 // Number of elements that will be written into the circular buffer.
-#define WRITE_QUEUE_LEN 200
+#define WRITE_QUEUE_LEN 10000000
 
 #define RANDOM_MAX 1000
 #define RANDOM_MIN 1
