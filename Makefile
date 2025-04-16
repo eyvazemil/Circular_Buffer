@@ -1,4 +1,4 @@
-CC = gcc -fsanitize=address -g -O3 -Werror -lpthread
+CC = gcc -fsanitize=address -g -O0 -Werror -lpthread
 BUILD_DIR = Build
 SRC_DIR = src
 OUT_FILE = $(BUILD_DIR)/circular_buffer.out
@@ -40,4 +40,4 @@ $(BUILD_DIR)/circular_buffer_test.o: $(SRC_DIR)/circular_buffer_test.h \
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY = create_build_dir $(OBJECT_FILES)
+.PHONY = clean create_build_dir $(OBJECT_FILES)

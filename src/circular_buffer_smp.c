@@ -1,9 +1,13 @@
 #include "circular_buffer_smp.h"
-#include <stdlib.h>
+
+#define _GNU_SOURCE
+#include <sched.h>
 #include <pthread.h>
+#include <stdlib.h>
 #include <stdatomic.h>
 #include <assert.h>
 #include <stdio.h>
+#include <unistd.h>
 
 
 typedef struct circular_buffer_data {
@@ -14,6 +18,7 @@ typedef struct circular_buffer_data {
 
 typedef struct writer_data {
     CircularBufferData * m_buf_data;
+    cpu_set_t m_core_set;
     int * m_write_queue;
     int m_write_queue_len;
     int m_write_pos;
@@ -21,6 +26,7 @@ typedef struct writer_data {
 
 typedef struct reader_data {
     CircularBufferData * m_buf_data;
+    cpu_set_t m_core_set;
     int * m_read_queue;
     int m_read_queue_len;
     int m_read_pos;
@@ -39,6 +45,28 @@ static void * reader_thread_callback(void * data);
 CircularBufferSmp * circ_buf_smp_create(int * write_queue, int write_queue_len, int buf_len) {
     assert(write_queue_len > 0 ? write_queue != NULL : 1);
 
+    // Get number of CPUs and define affinity for both writer and reader threads to make sure 
+    // that those run on separate cores.
+    // As we set a logical CPU as an affinity of each thread, we have to separate them by 2
+    // to ensure that threads will run on 2 separate physical cores, as each physical core 
+    // has 2 logical ones.
+    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    assert(num_cores > 2);
+    
+    int writer_core_id = (num_cores - 1) / 2;
+    int reader_core_id = writer_core_id + 2;
+    cpu_set_t cpuset_writer;
+    cpu_set_t cpuset_reader;
+
+    CPU_ZERO(&cpuset_writer);
+    CPU_ZERO(&cpuset_reader);
+    CPU_SET(writer_core_id, &cpuset_writer);
+    CPU_SET(reader_core_id, &cpuset_reader);
+
+    printf("Number of cores: %ld, writer core: %d, reader core: %d.\n", 
+        num_cores, writer_core_id, reader_core_id
+    );
+
     // Initialize the buffer.
     CircularBufferSmp * circular_buffer = (CircularBufferSmp *) malloc(sizeof(CircularBufferSmp));
     CircularBufferData * data = (CircularBufferData *) malloc(sizeof(CircularBufferData));
@@ -48,6 +76,7 @@ CircularBufferSmp * circ_buf_smp_create(int * write_queue, int write_queue_len, 
     data->m_num_elems = 0;
 
     circular_buffer->m_writer_data = (WriterData *) malloc(sizeof(WriterData));
+    circular_buffer->m_writer_data->m_core_set = cpuset_writer;
     circular_buffer->m_writer_data->m_buf_data = data;
     circular_buffer->m_writer_data->m_write_queue = (int *) malloc(write_queue_len * sizeof(int));
     circular_buffer->m_writer_data->m_write_queue_len = write_queue_len;
@@ -58,6 +87,7 @@ CircularBufferSmp * circ_buf_smp_create(int * write_queue, int write_queue_len, 
     }
 
     circular_buffer->m_reader_data = (ReaderData *) malloc(sizeof(ReaderData));
+    circular_buffer->m_reader_data->m_core_set = cpuset_reader;
     circular_buffer->m_reader_data->m_buf_data = data;
     circular_buffer->m_reader_data->m_read_queue = (int *) malloc(write_queue_len * sizeof(int));
     circular_buffer->m_reader_data->m_read_queue_len = write_queue_len;
@@ -138,6 +168,20 @@ static void * writer_thread_callback(void * data) {
     WriterData * param_data = (WriterData *) data;
     CircularBufferData * buf_data = param_data->m_buf_data;
 
+    // Set affinity of this thread.
+    pthread_t thread = pthread_self();
+
+    if(pthread_setaffinity_np(thread, sizeof(param_data->m_core_set), 
+        &(param_data->m_core_set))
+    ) {
+        puts("Couldn't set affinity of the writer thread.");
+        goto exit;
+    }
+
+    // Sleep to make sure that reader thread has also started, so that both threads
+    // process this circular buffer concurrently.
+    sleep(1);
+
     for(int queue_pos = 0; queue_pos < param_data->m_write_queue_len; ++queue_pos) {
         while(buf_data->m_num_elems == buf_data->m_buf_len) {}
 
@@ -154,6 +198,7 @@ static void * writer_thread_callback(void * data) {
         ++(buf_data->m_num_elems);
     }
 
+exit:
     pthread_exit(NULL);
 }
 
@@ -161,6 +206,16 @@ static void * reader_thread_callback(void * data) {
     assert(data);
     ReaderData * param_data = (ReaderData *) data;
     CircularBufferData * buf_data = param_data->m_buf_data;
+
+    // Set affinity of this thread.
+    pthread_t thread = pthread_self();
+    
+    if(pthread_setaffinity_np(thread, sizeof(param_data->m_core_set), 
+        &(param_data->m_core_set))
+    ) {
+        puts("Couldn't set affinity of the reader thread.");
+        goto exit;
+    }
 
     for(int queue_pos = 0; queue_pos < param_data->m_read_queue_len; ++queue_pos) {
         while(buf_data->m_num_elems == 0) {}
@@ -174,5 +229,6 @@ static void * reader_thread_callback(void * data) {
         --(buf_data->m_num_elems);
     }
 
+exit:
     pthread_exit(NULL);
 }
