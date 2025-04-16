@@ -15,8 +15,10 @@ CircularBuffer * circ_buf_seq_create(int buf_len);
 
 /**
  * @brief Destroys circular buffer `buf`.
+ *
+ * @param buf Buffer to be freed,. Will be deallocated and set to `NULL` by this function.
  */
-void circ_buf_seq_destroy(CircularBuffer * buf);
+void circ_buf_seq_destroy(CircularBuffer ** buf);
 
 /**
  * @brief Reads an element from the circular buffer `buf` into `elem`.

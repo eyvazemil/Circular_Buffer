@@ -1,8 +1,15 @@
 #include "circular_buffer_test.h"
 #include "circular_buffer_sequential.h"
+#include "circular_buffer_smp.h"
 #include <assert.h>
+#include <stdlib.h>
 #include <stdio.h>
 
+// Number of elements that will be written into the circular buffer.
+#define WRITE_QUEUE_LEN 200
+
+#define RANDOM_MAX 1000
+#define RANDOM_MIN 1
 
 void test_sequential(void) {
     const int circular_buffer_size = 5;
@@ -46,4 +53,43 @@ void test_sequential(void) {
     }
 
     assert(circ_buf_seq_get_num_elems(buf) == 0);
+    circ_buf_seq_destroy(&buf);
+    assert(!buf);
+}
+
+void test_smp() {
+    for(int buf_len = 1; buf_len < 20; ++buf_len) {
+        printf("Testing SMP implementation with buffer length %d.\n", buf_len);
+
+        int * write_queue = (int *) malloc(WRITE_QUEUE_LEN * sizeof(int));
+        int * read_queue = (int *) calloc(WRITE_QUEUE_LEN, sizeof(int));
+
+        for(int queue_pos = 0; queue_pos < WRITE_QUEUE_LEN; ++queue_pos) {
+            int random_value = rand() % RANDOM_MAX + RANDOM_MIN;
+            write_queue[queue_pos] = random_value;
+        }
+
+        CircularBufferSmp * circular_buffer = circ_buf_smp_create(
+            write_queue, WRITE_QUEUE_LEN, buf_len
+        );
+
+        circ_buf_smp_destroy(&circular_buffer, read_queue);
+        assert(!circular_buffer);
+
+        // Check that the values read from the circular buffer are equal to the ones written to it.
+        for(int queue_pos = 0; queue_pos < WRITE_QUEUE_LEN; ++queue_pos) {
+            int read_val = read_queue[queue_pos];
+            
+            if(read_val != write_queue[queue_pos]) {
+                printf("Read value %d under index %d wasn't written into the buffer.\n", 
+                    read_val, queue_pos
+                );
+
+                break;
+            }
+        }
+
+        free(write_queue);
+        free(read_queue);
+    }
 }

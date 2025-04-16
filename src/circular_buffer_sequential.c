@@ -21,12 +21,10 @@ CircularBuffer * circ_buf_seq_create(int buf_len) {
     return circular_buffer;
 }
 
-void circ_buf_seq_destroy(CircularBuffer * buf) {
-    free(buf->m_buf);
-    buf->m_buf_len = 0;
-    buf->m_num_elems = 0;
-    buf->m_write_pos = 0;
-    buf->m_read_pos = 0;
+void circ_buf_seq_destroy(CircularBuffer ** buf) {
+    free((*buf)->m_buf);
+    free(*buf);
+    *buf = NULL;
 }
 
 int circ_buf_seq_read(CircularBuffer * buf, int * elem) {
